@@ -3,6 +3,7 @@
 use std::{borrow::Cow, ops::Deref, sync::Arc, time::Instant};
 
 use clap::Parser;
+use wgpu::{util::{BufferInitDescriptor, DeviceExt}, BufferUsages, ShaderStages};
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{KeyEvent, WindowEvent}, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{Key, NamedKey}, window::Window};
 
 #[derive(Debug, Parser)]
@@ -11,10 +12,10 @@ struct AppArgs {
     #[arg(long, action = clap::ArgAction::HelpLong)]
     help: Option<bool>,
 
-    #[arg(short, long, default_value_t = 960)]
+    #[arg(short, long, default_value_t = 512)]
     width: u32,
 
-    #[arg(short, long, default_value_t = 640)]
+    #[arg(short, long, default_value_t = 512)]
     height: u32,
 }
 
@@ -61,11 +62,23 @@ impl ApplicationHandler for App {
         let mut window_attrs = Window::default_attributes();
         window_attrs.title = "Warp Speed Chaos Game".into();
         window_attrs.resizable = false; // TODO: requires recreating framebuffer
-        window_attrs.inner_size = Some(PhysicalSize {
+        let window_size = PhysicalSize {
             width: args.width,
             height: args.height,
-        }.into());
+        };
+        window_attrs.inner_size = Some(window_size.into());
+
         let window = event_loop.create_window(window_attrs).unwrap();
+        if let Some(primary_monitor) = event_loop.primary_monitor() {
+            let monitor_size = primary_monitor.size();
+            let position = winit::dpi::PhysicalPosition {
+                x: (monitor_size.width.saturating_sub(window_size.width)) / 2,
+                y: (monitor_size.height.saturating_sub(window_size.width)) / 2,
+            };
+            window.set_outer_position(position);
+        } else {
+            eprintln!("couldn't determine primary monitor, can't set window position :(");
+        }
         window.request_redraw();
 
         let state = pollster::block_on(async { AppState::new(args, window).await });
@@ -82,14 +95,16 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested | WindowEvent::Destroyed => {
                 event_loop.exit();
             },
-            WindowEvent::KeyboardInput { event, .. } => match event {
-                KeyEvent { logical_key: Key::Named(NamedKey::Escape), .. } => {
+            WindowEvent::KeyboardInput { event: KeyEvent { logical_key, .. }, .. } => match logical_key {
+                Key::Named(NamedKey::Escape) => {
                     event_loop.exit();
                 },
-                _ => {},
+                _ => {
+                    self.window.request_redraw();
+                },
             },
             WindowEvent::RedrawRequested => {
-                self.window.request_redraw();
+                // self.window.request_redraw();
                 self.render();
             },
 
@@ -121,9 +136,15 @@ struct AppState {
 }
 
 struct Pipelines {
-    // chaos_game: wgpu::ComputePipeline,
+    compute: wgpu::ComputePipeline,
     // rasterizer: wgpu::ComputePipeline,
     blitting: wgpu::RenderPipeline,
+
+    samples_bind_group: wgpu::BindGroup,
+    samples_buffer: wgpu::Buffer,
+
+    metadata_bind_group: wgpu::BindGroup,
+    metadata_buffer: wgpu::Buffer,
 }
 
 impl AppState {
@@ -185,14 +206,118 @@ impl AppState {
     }
 
     async fn init_pipelines(args: &AppArgs, device: &wgpu::Device, surface_format: wgpu::TextureFormat) -> Pipelines {
+        // =======
+        // buffers
+        // =======
+        let mut zero_init = vec![0u8; (args.width * args.height * size_of::<u32>() as u32) as usize];
+        let samples_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            usage: BufferUsages::STORAGE,
+            contents: &zero_init,
+        });
+        zero_init.resize(size_of::<u32>(), 0);
+        let metadata_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            usage: BufferUsages::STORAGE | BufferUsages::UNIFORM,
+            contents: &zero_init,
+        });
+
+        // ==================
+        // samples bind group
+        // ==================
+        let samples_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE | ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let samples_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &samples_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &samples_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        // ===================
+        // metadata bind group
+        // ===================
+        let metadata_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::COMPUTE | ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let metadata_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &metadata_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &metadata_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }],
+        });
+
+        // ===================
+        // chaos game pipeline
+        // ===================
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("quad.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("chaos_game.wgsl"))),
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[&samples_group_layout, &metadata_group_layout],
+            push_constant_ranges: &[wgpu::PushConstantRange {
+                stages: wgpu::ShaderStages::COMPUTE,
+                range: 0 .. size_of::<(u32, u32, f32, u32)>() as _,
+            }],
+        });
+        let compute = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: default(),
+            cache: default(),
+        });
+        
+        // ===============
+        // render pipeline
+        // ===============
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&samples_group_layout, &metadata_group_layout],
+            push_constant_ranges: &[wgpu::PushConstantRange {
+                stages: wgpu::ShaderStages::FRAGMENT,
+                range: 0 .. size_of::<(u32, u32, f32, u32)>() as _,
+            }],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("quad.wgsl"))),
         });
         let blitting = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -217,11 +342,29 @@ impl AppState {
         });
 
         Pipelines {
+            compute,
             blitting,
+
+            samples_bind_group,
+            samples_buffer,
+
+            metadata_bind_group,
+            metadata_buffer,
         }
     }
 
     fn render(&self) {
+        let now = Instant::now();
+        let iters_per_invocation = 10u32.pow(3);
+        // FIXME: pass 64 bit time
+        let now_secs = (now - self.epoch).as_secs_f32();
+
+        let mut pc_buf = [0u8; size_of::<(u32, u32, f32, u32)>()];
+        (&mut pc_buf[0 .. 4]).copy_from_slice(&self.args.width.to_ne_bytes());
+        (&mut pc_buf[4 .. 8]).copy_from_slice(&self.args.height.to_ne_bytes());
+        (&mut pc_buf[8 .. 12]).copy_from_slice(&now_secs.to_ne_bytes());
+        (&mut pc_buf[12 .. 16]).copy_from_slice(&iters_per_invocation.to_ne_bytes());
+
         let surface_texture = self.surface.get_current_texture().expect("could not get surface's texture");
         let texture_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.surface_format.add_srgb_suffix()),
@@ -229,6 +372,14 @@ impl AppState {
         });
 
         let mut encoder = self.device.create_command_encoder(&default());
+        let mut pass = encoder.begin_compute_pass(&default());
+        pass.set_pipeline(&self.pipelines.compute);
+        pass.set_bind_group(0, &self.pipelines.samples_bind_group, &[]);
+        pass.set_bind_group(1, &self.pipelines.metadata_bind_group, &[]);
+        pass.set_push_constants(0, &pc_buf);
+        pass.dispatch_workgroups(self.args.width, self.args.height, 1);
+        drop(pass);
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -242,10 +393,14 @@ impl AppState {
             ..default()
         });
         pass.set_pipeline(&self.pipelines.blitting);
+        pass.set_bind_group(0, &self.pipelines.samples_bind_group, &[]);
+        pass.set_bind_group(1, &self.pipelines.metadata_bind_group, &[]);
+        pass.set_push_constants(ShaderStages::FRAGMENT, 0, &pc_buf);
         pass.draw(0 .. 6, 0 .. 1);
         drop(pass);
 
-        self.queue.submit([encoder.finish()]);
+        let commands = encoder.finish();
+        self.queue.submit([commands]);
         self.window.pre_present_notify();
         surface_texture.present();
     }
