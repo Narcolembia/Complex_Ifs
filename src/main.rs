@@ -4,7 +4,7 @@ use std::{borrow::Cow, ops::Deref, sync::Arc, time::Instant};
 
 use clap::Parser;
 use wgpu::{util::{BufferInitDescriptor, DeviceExt}, BufferUsages, ShaderStages};
-use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{KeyEvent, WindowEvent}, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{Key, NamedKey}, window::Window};
+use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{ElementState, KeyEvent, WindowEvent}, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{Key, NamedKey}, window::Window};
 
 #[derive(Debug, Parser)]
 #[command(disable_help_flag = true)]
@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
     dbg!(&args);
 
     let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
     let mut app = App::new(args);
     event_loop.run_app(&mut app)?;
 
@@ -58,7 +58,7 @@ impl Deref for App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let args = self.args.take().expect("app missing its arg field");
-        
+
         let mut window_attrs = Window::default_attributes();
         window_attrs.title = "Warp Speed Chaos Game".into();
         window_attrs.resizable = false; // TODO: requires recreating framebuffer
@@ -84,7 +84,7 @@ impl ApplicationHandler for App {
         let state = pollster::block_on(async { AppState::new(args, window).await });
         self.state = Some(state);
     }
-    
+
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
@@ -95,13 +95,22 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested | WindowEvent::Destroyed => {
                 event_loop.exit();
             },
-            WindowEvent::KeyboardInput { event: KeyEvent { logical_key, .. }, .. } => match logical_key {
+            WindowEvent::KeyboardInput {
+                event: KeyEvent {
+                    logical_key,
+                    state: key_state,
+                    repeat,
+                    ..
+                },
+                ..
+            } => match logical_key {
                 Key::Named(NamedKey::Escape) => {
                     event_loop.exit();
                 },
-                _ => {
+                _ if !repeat && key_state == ElementState::Pressed => {
                     self.window.request_redraw();
                 },
+                _ => {},
             },
             WindowEvent::RedrawRequested => {
                 // self.window.request_redraw();
@@ -303,7 +312,7 @@ impl AppState {
             compilation_options: default(),
             cache: default(),
         });
-        
+
         // ===============
         // render pipeline
         // ===============
