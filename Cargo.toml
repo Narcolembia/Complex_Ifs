@@ -1,0 +1,11 @@
+[package]
+name = "Complex_Ifs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { version = "1.0.98", features = ["backtrace"] }
+clap = { version = "4.5.40", features = ["derive"] }
+pollster = "0.4.0"
+wgpu = "25.0.2"
+winit = "0.30.11"
