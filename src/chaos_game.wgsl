@@ -1,6 +1,10 @@
 @group(0) @binding(0)
 var<storage, read_write> output: array<atomic<u32>>;
 
+@group(0) @binding(1)
+var<storage, read> entropy: array<u32>;
+
+
 struct Metadata {
 	max: atomic<u32>,
 }
@@ -41,10 +45,34 @@ fn hash32(n: u32) -> u32 {
     return h32^(h32 >> 16);
 }
 
+fn hash32_2d(p: vec2u) -> u32 {
+    let p2 = 2246822519u; let p3 = 3266489917u;
+    let p4 = 668265263u; let p5 = 374761393u;
+    var h32 = p.y + p5 + p.x * p3;
+    h32 = p4 * ((h32 << 17) | (h32 >> (32 - 17)));
+    h32 = p2 * (h32^(h32 >> 15));
+    h32 = p3 * (h32^(h32 >> 13));
+    return h32^(h32 >> 16);
+}
+
+fn randrange_unbiased(seed: u32, max: u32) -> u32 {
+    var seed_h = seed;
+    let limit = 0xFFFFFFFF - 0xFFFFFFFF % max;
+    loop {
+        if seed_h >= limit {
+            break;
+        }
+        seed_h = hash32(seed_h);
+    }
+    return seed_h  % max;
+}
+
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    // var rand = hash32(global_id.x + u32(pc.time*1000));
-	var rand = vec2u(hash32(global_id.x), hash32(global_id.y));
+    // var rand = hash32_2d(global_id.xy + u32(pc.time*1000));
+	// var rand = vec2u(hash32(global_id.x), hash32(global_id.y));
+    //var seed = hash32(u32(pc.time * 1000) ^ hash32_2d(global_id.x)) & 0xFFFF;
+    //var rand = vec2f(global_id.xy + seed);
     var z = vec2f(0.0,0.0);
     var index = vec2u(0,0);
 	var max_value = 0u;
@@ -52,9 +80,11 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     for(var j: u32 = 0; j < pc.iters_per_invocation; j++){
         // rand = hash32(rand);
-		var rand = vec2u(hash32(rand.x), hash32(rand.y));
+		// rand = vec2u(hash32(rand.x), hash32(rand.y));
+        let rand = entropy[j] ^ hash32(global_id.x);
+        //let v = perlinNoise2(rand + vec2f(f32(j) / f32(pc.iters_per_invocation), 0.42));
 
-        /*switch (j % 3) {
+        switch u32(rand % 3) {
 			case 0: {
 				z = 0.5*z + 0.5*vec2f(cos(0.0),  sin(0.0));
 			}
@@ -67,22 +97,27 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 			default: {
 				z = vec2f(0.5);
 			}
-        }   
-        index = vec2u((z + vec2f(1.0))/2.0)*pc.width;*/
-        
+        }
+        index = vec2u(((z + 1.0) / 2.0) * f32(pc.width));
+        //let uz = vec2u((z + 1.0) / 2.0 * 255.0);
 
-		let dx = perlinNoise2(vec2f(rand));
-		let dy = perlinNoise2(-vec2f(rand));
-		// let dx = f32(global_id.x) / f32(pc.width);
-		// let dy = f32(global_id.y) / f32(pc.height);
-		let fpos = ((vec2f(dx, dy) + 0.0) / 1.0) * vec2f(pc.width);
-		index = vec2u(u32(fpos.x), u32(fpos.y));
+
+		// let ppos = (vec2f(global_id.xy) / f32(pc.width));// + vec2f(rand & vec2u(0xFF)) * 0.01;
+        // let nx = ((perlinNoise2(ppos) + 1.0) / 2.0);
+		// let ny = ((perlinNoise2(-ppos) + 1.0) / 2.0);
+        // index = vec2u(u32(nx * f32(pc.width)), u32(ny * f32(pc.height)));
+		// let dx = f32(global_id.x) / f32(pc.width) * 2.0 - 1.0 + nx;
+		// let dy = f32(global_id.y) / f32(pc.height) * 2.0 - 1.0 + ny;
+		//let fpos = ((vec2f(dx, dy) + 1.0) / 2.0) * pc.width;
+		//index = vec2u(u32(fpos.x), u32(fpos.y));
+        //index = global_id.xy;
         if ((index.x < pc.width) && (index.y < pc.height)){
+            //atomicStore(&output[index.y * pc.width + index.x], uz.x << 16 | uz.y << 8);
 			var old = atomicAdd(&output[(index.x) + (index.y) * pc.width], 1u);
 			max_value = max(old + 1u, max_value);
         }
     }
-	atomicMax(&metadata.max, max_value);
+	// atomicMax(&metadata.max, max_value);
 
 	// let index = global_id.y * pc.width + global_id.x;
 	// atomicStore(&output[index], rand % 10u);

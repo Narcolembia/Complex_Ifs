@@ -58,10 +58,10 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 	let px = in.uv.x * f32(pc.width);
 	let py = in.uv.y * f32(pc.height);
 	let index = u32(py) * pc.width + u32(px);
-	// let int_color = atomicLoad(&compute_output[index]);
-	// let r = (int_color & 0xff0000) >> 16;
-	// let g = (int_color & 0x00ff00) >> 8;
-	// let b = (int_color & 0x0000ff) >> 0;
+	let int_color = atomicLoad(&compute_output[index]);
+	let r = (int_color & 0xff0000) >> 16;
+	let g = (int_color & 0x00ff00) >> 8;
+	let b = (int_color & 0x0000ff) >> 0;
 	// let color = vec3<f32>(f32(r) / 255.0, f32(g) / 255.0, f32(b) / 255.0);
 	let color = vec3<f32>(f32(atomicLoad(&compute_output[index])) / f32(atomicLoad(&metadata.max)));
 	return vec4<f32>(color, 1.0);

@@ -3,7 +3,8 @@
 use std::{borrow::Cow, ops::Deref, sync::Arc, time::Instant};
 
 use clap::Parser;
-use wgpu::{util::{BufferInitDescriptor, DeviceExt}, BufferUsages, ShaderStages};
+use rand::Rng;
+use wgpu::{util::{BufferInitDescriptor, DeviceExt}, BufferUsages, PollType, ShaderStages};
 use winit::{application::ApplicationHandler, dpi::PhysicalSize, event::{ElementState, KeyEvent, WindowEvent}, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{Key, NamedKey}, window::Window};
 
 #[derive(Debug, Parser)]
@@ -218,18 +219,34 @@ impl AppState {
         // =======
         // buffers
         // =======
-        let mut zero_init = vec![0u8; (args.width * args.height * size_of::<u32>() as u32) as usize];
+        let mut buf_init = vec![0u8; (args.width * args.height * size_of::<u32>() as u32) as usize];
         let samples_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
             usage: BufferUsages::STORAGE,
-            contents: &zero_init,
+            contents: &buf_init,
         });
-        zero_init.resize(size_of::<u32>(), 0);
+
+        buf_init.resize(size_of::<u32>(), 0);
         let metadata_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
             usage: BufferUsages::STORAGE | BufferUsages::UNIFORM,
-            contents: &zero_init,
+            contents: &buf_init,
         });
+
+        let num_entroy_samples = 1024;
+        let mut rng = rand::rng();
+        buf_init.clear();
+        for _ in 0 .. num_entroy_samples {
+            let sample: u32 = rng.random();
+            buf_init.extend(sample.to_ne_bytes());
+        }
+        let entropy_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            usage: BufferUsages::STORAGE,
+            contents: &buf_init,
+        });
+
+
 
         // ==================
         // samples bind group
@@ -244,6 +261,18 @@ impl AppState {
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
+
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+
                 count: None,
             }],
         });
@@ -257,7 +286,16 @@ impl AppState {
                     offset: 0,
                     size: None,
                 }),
-            }],
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &entropy_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            }
+            ],
         });
 
         // ===================
@@ -364,7 +402,7 @@ impl AppState {
 
     fn render(&self) {
         let now = Instant::now();
-        let iters_per_invocation = 10u32.pow(3);
+        let iters_per_invocation = 1000u32;
         // FIXME: pass 64 bit time
         let now_secs = (now - self.epoch).as_secs_f32();
 
@@ -381,13 +419,20 @@ impl AppState {
         });
 
         let mut encoder = self.device.create_command_encoder(&default());
-        let mut pass = encoder.begin_compute_pass(&default());
-        pass.set_pipeline(&self.pipelines.compute);
-        pass.set_bind_group(0, &self.pipelines.samples_bind_group, &[]);
-        pass.set_bind_group(1, &self.pipelines.metadata_bind_group, &[]);
-        pass.set_push_constants(0, &pc_buf);
-        pass.dispatch_workgroups(self.args.width, self.args.height, 1);
-        drop(pass);
+
+        for _ in 0 .. 1 {
+            let now = Instant::now();
+            let now_secs = (now - self.epoch).as_secs_f32();
+            (&mut pc_buf[8 .. 12]).copy_from_slice(&now_secs.to_ne_bytes());
+
+            let mut pass = encoder.begin_compute_pass(&default());
+            pass.set_pipeline(&self.pipelines.compute);
+            pass.set_bind_group(0, &self.pipelines.samples_bind_group, &[]);
+            pass.set_bind_group(1, &self.pipelines.metadata_bind_group, &[]);
+            pass.set_push_constants(0, &pc_buf);
+            pass.dispatch_workgroups(16384, 1 , 1);
+            drop(pass);
+        }
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -409,9 +454,14 @@ impl AppState {
         drop(pass);
 
         let commands = encoder.finish();
-        self.queue.submit([commands]);
+        let submission = self.queue.submit([commands]);
         self.window.pre_present_notify();
         surface_texture.present();
+
+        self.device.poll(PollType::WaitForSubmissionIndex(submission)).unwrap();
+
+        let end = Instant::now();
+        eprintln!("rendering took {:.02}ms", (end - now).as_secs_f64() * 1000.0);
     }
 }
 
