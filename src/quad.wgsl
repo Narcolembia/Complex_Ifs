@@ -62,7 +62,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 	let r = (int_color & 0xff0000) >> 16;
 	let g = (int_color & 0x00ff00) >> 8;
 	let b = (int_color & 0x0000ff) >> 0;
-	// let color = vec3<f32>(f32(r) / 255.0, f32(g) / 255.0, f32(b) / 255.0);
+	//let color = vec3<f32>(f32(r) / 255.0, f32(g) / 255.0, f32(b) / 255.0);
 	let color = vec3<f32>(f32(atomicLoad(&compute_output[index])) / f32(atomicLoad(&metadata.max)));
 	return vec4<f32>(color, 1.0);
 	// return vec4<f32>(in.uv, 0.0, 1.0);

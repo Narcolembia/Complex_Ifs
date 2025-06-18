@@ -402,7 +402,7 @@ impl AppState {
 
     fn render(&self) {
         let now = Instant::now();
-        let iters_per_invocation = 1000u32;
+        let iters_per_invocation = 500u32;
         // FIXME: pass 64 bit time
         let now_secs = (now - self.epoch).as_secs_f32();
 
@@ -430,7 +430,7 @@ impl AppState {
             pass.set_bind_group(0, &self.pipelines.samples_bind_group, &[]);
             pass.set_bind_group(1, &self.pipelines.metadata_bind_group, &[]);
             pass.set_push_constants(0, &pc_buf);
-            pass.dispatch_workgroups(16384, 1 , 1);
+            pass.dispatch_workgroups(64*1000, 1 , 1);
             drop(pass);
         }
 
