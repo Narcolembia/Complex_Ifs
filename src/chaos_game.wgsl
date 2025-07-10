@@ -48,21 +48,21 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         
         switch u32(rand % 3) {
 			case 0: {
-				z = 0.5*z + 0.5*vec2f(cos(0.0),  sin(0.0));
+				z = (1-ratio)*z + ratio*vec2f(cos(0.0),  sin(0.0));
 			}
 			case 1: {
-				z = 0.5*z + 0.5*vec2f(cos(tau/3.0),  sin(tau/3.0));
+				z = (1-ratio)*z + ratio*vec2f(cos(tau/3.0),  sin(tau/3.0));
 			}
 			case 2: {
-				z = 0.5*z + 0.5*vec2f(cos(2.0*tau/3.0),  sin(2.0*tau/3.0));
+				z = (1-ratio)*z + ratio*vec2f(cos(2.0*tau/3.0),  sin(2.0*tau/3.0));
 			}
 			default: {
-				z = vec2f(0.5);
+				z = vec2f(0.0);
 			}
         }
-        index = vec2u(((z + 1.0) / 2.0) * f32(pc.width));
-        
-        if ((index.x < pc.width) && (index.y < pc.height)){
+        index = vec2u(((z + 1.0) / 2.0) * f32(box_size));
+   
+        if ((index.x < pc.width) && (index.y < pc.height) && j >10){
 			var old = atomicAdd(&output[(index.x) + (index.y) * pc.width], 1u);
 			max_value = max(old + 1u, max_value);
         }
