@@ -219,23 +219,17 @@ impl AppState {
         // =======
         // buffers
         // =======
+
         let mut buf_init = vec![0u8; (args.width * args.height * size_of::<u32>() as u32) as usize];
-        let samples_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: None,
-            usage: BufferUsages::STORAGE,
-            contents: &buf_init,
-        });
 
-        buf_init.resize(size_of::<u32>(), 0);
-        let metadata_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: None,
-            usage: BufferUsages::STORAGE | BufferUsages::UNIFORM,
-            contents: &buf_init,
-        });
+        // =======
+        // Read only
+        // =======
 
+        //entropy buffer =======================================================================
+        buf_init.clear();
         let num_entroy_samples = 1024;
         let mut rng = rand::rng();
-        buf_init.clear();
         for _ in 0 .. num_entroy_samples {
             let sample: u32 = rng.random();
             buf_init.extend(sample.to_ne_bytes());
@@ -245,9 +239,51 @@ impl AppState {
             usage: BufferUsages::STORAGE,
             contents: &buf_init,
         });
+        //============================================================================================
+
+         //Metadata buffer
+        buf_init.clear();
+        buf_init.resize(size_of::<u32>(), 0);
+        let metadata_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            usage: BufferUsages::STORAGE | BufferUsages::UNIFORM,
+            contents: &buf_init,
+        });
+        //====================================================================================
+
+        //variables buffer
+        //TODO
+        //====================================================================================
+        
+        //variables buffer
+        //transform
+        //====================================================================================
 
 
 
+
+
+        // =======
+        // Read/Write
+        // =======
+
+        //samples buffer ====================================================================
+        buf_init.clear();
+        let samples_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            usage: BufferUsages::STORAGE,
+            contents: &buf_init,
+        });
+        //====================================================================================
+
+        //Init/final values buffer============================================================
+        //TODO
+        //====================================================================================
+
+
+        
+
+        
         // ==================
         // samples bind group
         // ==================
