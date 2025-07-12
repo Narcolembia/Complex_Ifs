@@ -20,6 +20,21 @@ struct AppArgs {
     height: u32,
 }
 
+
+struct TransformData{
+    scale: f32,
+    rotation: f32,
+    translation_x: f32,
+    translation_y: f32, 
+}
+
+struct Metadata{
+    width: u32,
+    height:u32,
+    iterations_per_invocation:u32,
+}
+
+
 fn main() -> anyhow::Result<()> {
     let args = AppArgs::parse();
     #[cfg(debug_assertions)]
@@ -241,7 +256,7 @@ impl AppState {
         });
         //============================================================================================
 
-         //Metadata buffer
+        //Metadata buffer
         buf_init.clear();
         buf_init.resize(size_of::<u32>(), 0);
         let metadata_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -255,8 +270,8 @@ impl AppState {
         //TODO
         //====================================================================================
         
-        //variables buffer
-        //transform
+        //transform buffer
+        //
         //====================================================================================
 
 
