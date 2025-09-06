@@ -5,7 +5,8 @@ use crate::util::*;
 // use crevice
 
 use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt}, BufferUsages, PollType, ShaderStages, TextureUsages
+    BufferUsages, PollType, ShaderStages, TextureUsages,
+    util::{BufferInitDescriptor, DeviceExt},
 };
 use winit::window::Window;
 
@@ -25,7 +26,7 @@ pub enum SurfaceDest {
         size: (u32, u32),
         texture: wgpu::Texture,
         readback_buffer: wgpu::Buffer,
-    }
+    },
 }
 
 impl SurfaceDest {
@@ -34,18 +35,30 @@ impl SurfaceDest {
             &SurfaceDest::Window { format, .. } | &SurfaceDest::Standalone { format, .. } => format,
         }
     }
-    
+
     pub fn get_handle(&self) -> SurfaceHandle {
         match self {
-            &Self::Window { format, ref surface, .. } => {
-                let surface_texture = surface.get_current_texture().expect("could not get window surface's texture");
-                let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor {
-                    format: Some(format.add_srgb_suffix()),
-                    ..default()
-                });
+            &Self::Window {
+                format,
+                ref surface,
+                ..
+            } => {
+                let surface_texture = surface
+                    .get_current_texture()
+                    .expect("could not get window surface's texture");
+                let view = surface_texture
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        format: Some(format.add_srgb_suffix()),
+                        ..default()
+                    });
                 SurfaceHandle::Window(surface_texture, view)
-            },
-            &Self::Standalone { format, ref texture, .. } => {
+            }
+            &Self::Standalone {
+                format,
+                ref texture,
+                ..
+            } => {
                 let view = texture.create_view(&wgpu::TextureViewDescriptor {
                     format: Some(format),
                     ..default()
@@ -54,11 +67,15 @@ impl SurfaceDest {
             }
         }
     }
-    
+
     pub fn queue_readback(&self, encoder: &mut wgpu::CommandEncoder) {
         match self {
-            Self::Window { .. } => {},
-            Self::Standalone { texture, readback_buffer, .. } => {
+            Self::Window { .. } => {}
+            Self::Standalone {
+                texture,
+                readback_buffer,
+                ..
+            } => {
                 let size = texture.size();
                 encoder.copy_texture_to_buffer(
                     wgpu::TexelCopyTextureInfo {
@@ -77,14 +94,14 @@ impl SurfaceDest {
                     },
                     size,
                 );
-            },
+            }
         }
     }
-    
+
     pub fn pre_present(&self) {
         match self {
             Self::Window { window, .. } => window.pre_present_notify(),
-            Self::Standalone { .. } => {},
+            Self::Standalone { .. } => {}
         }
     }
 }
@@ -97,18 +114,20 @@ pub enum SurfaceHandle {
 impl SurfaceHandle {
     pub fn get_view(&self) -> &wgpu::TextureView {
         match self {
-            SurfaceHandle::Window(_, texture_view) | SurfaceHandle::Standalone(texture_view) => texture_view,
+            SurfaceHandle::Window(_, texture_view) | SurfaceHandle::Standalone(texture_view) => {
+                texture_view
+            }
         }
     }
-    
+
     pub fn present(self) {
         match self {
             Self::Window(surface, _) => {
                 surface.present();
-            },
+            }
             Self::Standalone(_) => {
                 // TODO: maybe write to a .png?
-            },
+            }
         }
     }
 }
@@ -224,32 +243,37 @@ impl RenderingEngine {
             pipelines,
         }
     }
-    
+
     pub async fn readback_pixels(&self) -> Vec<u8> {
         match &self.surface_dest {
             SurfaceDest::Window { .. } => unreachable!("trying to readback from window surface"),
-            &SurfaceDest::Standalone { ref texture, ref readback_buffer, size: (width, height), .. } => {
+            &SurfaceDest::Standalone {
+                ref texture,
+                ref readback_buffer,
+                size: (width, height),
+                ..
+            } => {
                 let slice = readback_buffer.slice(..);
                 let (sender, receiver) = flume::bounded(1);
                 slice.map_async(wgpu::MapMode::Read, move |res| sender.send(res).unwrap());
                 self.device.poll(wgpu::PollType::Wait).unwrap();
                 receiver.recv_async().await.unwrap().unwrap();
-                
+
                 let view = slice.get_mapped_range();
-                let mut pixels = Vec::with_capacity(width as usize * height as usize * size_of::<u32>());
+                let mut pixels =
+                    Vec::with_capacity(width as usize * height as usize * size_of::<u32>());
                 pixels.extend_from_slice(&view);
                 drop(view);
                 readback_buffer.unmap();
-                
+
                 pixels
-            },
+            }
         }
     }
 }
 
 pub struct Pipelines {
     pub render_pipeline: wgpu::RenderPipeline,
-    
     /*pub compute: wgpu::ComputePipeline,
     // rasterizer: wgpu::ComputePipeline,
     pub blitting: wgpu::RenderPipeline,
@@ -264,11 +288,14 @@ pub struct Pipelines {
 
     pub render_settings_bind_group: wgpu::BindGroup,
     pub render_settings_buffer: wgpu::Buffer,*/
-
 }
 
 impl Pipelines {
-    pub fn new(surface_format: wgpu::TextureFormat, device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    pub fn new(
+        surface_format: wgpu::TextureFormat,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Self {
         /*// =======
         // buffers
         // =======
@@ -474,7 +501,7 @@ impl Pipelines {
             multiview: None,
             cache: None,
         });*/
-        
+
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
@@ -500,7 +527,7 @@ impl Pipelines {
             multiview: None,
             cache: None,
         });
-        
+
         Self {
             render_pipeline,
             /*compute,

@@ -2,7 +2,7 @@
 
 use std::io;
 
-use crevice::std140::{self, AsStd140, WriteStd140, Vec4};
+use crevice::std140::{self, AsStd140, Vec4, WriteStd140};
 // use crevice::std140;
 
 fn main() {

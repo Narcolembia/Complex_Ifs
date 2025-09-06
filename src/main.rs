@@ -4,7 +4,13 @@ pub mod rendering_engine;
 pub mod util;
 
 use std::{
-    borrow::Cow, collections::{hash_map, HashMap}, fs::metadata, ops::Deref, path::PathBuf, sync::Arc, time::Instant
+    borrow::Cow,
+    collections::{HashMap, hash_map},
+    fs::metadata,
+    ops::Deref,
+    path::PathBuf,
+    sync::Arc,
+    time::Instant,
 };
 
 use clap::Parser;
@@ -32,14 +38,13 @@ struct AppArgs {
 
     #[arg(short, long, default_value_t = 512)]
     width: u32,
-    
+
     #[arg(short, long, default_value_t = 512)]
     height: u32,
-    
-    
+
     #[arg(short = 'y', long)]
     overwrite_output: bool,
-    
+
     output_image: Option<PathBuf>,
 }
 
@@ -47,13 +52,13 @@ fn main() -> anyhow::Result<()> {
     let args = AppArgs::parse();
     #[cfg(debug_assertions)]
     dbg!(&args);
-    
+
     let mut app = App::new(args);
     if let Some(output_image) = std::mem::take(&mut app.args.as_mut().unwrap().output_image) {
         if output_image.exists() && !app.args.as_ref().unwrap().overwrite_output {
             anyhow::bail!("output image {output_image:?} already exists, refusing to overwrite");
         }
-        
+
         let (width, height) = {
             let args = app.args.as_ref().unwrap();
             (args.width, args.height)
@@ -61,7 +66,8 @@ fn main() -> anyhow::Result<()> {
         app.headless_init();
         app.render();
         let pixels = pollster::block_on(async { app.rendering_engine.readback_pixels().await });
-        let image = image::RgbaImage::from_vec(width, height, pixels).ok_or_else(|| anyhow::anyhow!("couldn't convert pixels buffer to image"))?;
+        let image = image::RgbaImage::from_vec(width, height, pixels)
+            .ok_or_else(|| anyhow::anyhow!("couldn't convert pixels buffer to image"))?;
         image.save(output_image)?;
     } else {
         let event_loop = EventLoop::new()?;
@@ -85,7 +91,7 @@ impl App {
             state: None,
         }
     }
-    
+
     fn headless_init(&mut self) {
         let args = self.args.take().expect("app missing its arg field");
         let state = pollster::block_on(async { AppState::new_headless(args).await });
@@ -193,7 +199,7 @@ impl AppState {
             rendering_engine,
         }
     }
-    
+
     async fn new_headless(args: AppArgs) -> Self {
         let surface_source = rendering_engine::SurfaceSource::Standalone(args.width, args.width);
         let rendering_engine = RenderingEngine::new(surface_source, default(), default()).await;
@@ -202,7 +208,7 @@ impl AppState {
             rendering_engine,
         }
     }
-    
+
     fn render(&self) {
         /*let now = Instant::now();
         let iters_per_invocation = 500u32;
@@ -280,11 +286,14 @@ impl AppState {
             "rendering took {:.02}ms",
             (end - now).as_secs_f64() * 1000.0
         );*/
-        
+
         let surface_handle = self.rendering_engine.surface_dest.get_handle();
         let surface_view = surface_handle.get_view();
-        
-        let mut encoder = self.rendering_engine.device.create_command_encoder(&default());
+
+        let mut encoder = self
+            .rendering_engine
+            .device
+            .create_command_encoder(&default());
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -300,16 +309,21 @@ impl AppState {
             occlusion_query_set: None,
         });
         pass.set_pipeline(&self.rendering_engine.pipelines.render_pipeline);
-        pass.draw(0 .. 3, 0 .. 1);
+        pass.draw(0..3, 0..1);
         drop(pass);
-        
-        self.rendering_engine.surface_dest.queue_readback(&mut encoder);
-        
+
+        self.rendering_engine
+            .surface_dest
+            .queue_readback(&mut encoder);
+
         let commands = encoder.finish();
         let submission = self.rendering_engine.queue.submit([commands]);
         self.rendering_engine.surface_dest.pre_present();
         surface_handle.present();
-        
-        self.rendering_engine.device.poll(PollType::WaitForSubmissionIndex(submission)).expect("couldn't poll device");
+
+        self.rendering_engine
+            .device
+            .poll(PollType::WaitForSubmissionIndex(submission))
+            .expect("couldn't poll device");
     }
 }
