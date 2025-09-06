@@ -2,20 +2,22 @@
 
 use std::io;
 
-use crevice::std140::{self, AsStd140, WriteStd140};
+use crevice::std140::{self, AsStd140, WriteStd140, Vec4};
 // use crevice::std140;
 
 fn main() {
-    /* let x = Foo {
+    let x = Foo {
         max: 42,
-        xs: vec![1, 2, 3, 4],
+        xs: vec![],
     };
-    let buffer = Vec::new();
-    let mut cursor = std::io::Cursor::new(buffer);
+    // let y = x.as_std140();
+    // dbg!(y);
+    // let buffer = Vec::new();
+    /*let mut cursor = std::io::Cursor::new(buffer);
     x.write_std140(&mut std140::Writer::new(&mut cursor))
         .unwrap();
     let b = cursor.into_inner();
-    dbg!(&x, b); */
+    dbg!(&x, b);*/
 }
 
 #[cfg(false)]

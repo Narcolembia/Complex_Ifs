@@ -33,6 +33,10 @@ struct AppArgs {
     #[arg(short, long, default_value_t = 512)]
     width: u32,
     
+    #[arg(short, long, default_value_t = 512)]
+    height: u32,
+    
+    
     #[arg(short = 'y', long)]
     overwrite_output: bool,
     
@@ -44,10 +48,26 @@ fn main() -> anyhow::Result<()> {
     #[cfg(debug_assertions)]
     dbg!(&args);
     
-    /* let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
     let mut app = App::new(args);
-    event_loop.run_app(&mut app)?; */
+    if let Some(output_image) = std::mem::take(&mut app.args.as_mut().unwrap().output_image) {
+        if output_image.exists() && !app.args.as_ref().unwrap().overwrite_output {
+            anyhow::bail!("output image {output_image:?} already exists, refusing to overwrite");
+        }
+        
+        let (width, height) = {
+            let args = app.args.as_ref().unwrap();
+            (args.width, args.height)
+        };
+        app.headless_init();
+        app.render();
+        let pixels = pollster::block_on(async { app.rendering_engine.readback_pixels().await });
+        let image = image::RgbaImage::from_vec(width, height, pixels).ok_or_else(|| anyhow::anyhow!("couldn't convert pixels buffer to image"))?;
+        image.save(output_image)?;
+    } else {
+        let event_loop = EventLoop::new()?;
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+        event_loop.run_app(&mut app)?;
+    }
 
     Ok(())
 }
@@ -64,6 +84,12 @@ impl App {
             args: Some(args),
             state: None,
         }
+    }
+    
+    fn headless_init(&mut self) {
+        let args = self.args.take().expect("app missing its arg field");
+        let state = pollster::block_on(async { AppState::new_headless(args).await });
+        self.state = Some(state);
     }
 }
 
@@ -84,7 +110,7 @@ impl ApplicationHandler for App {
         window_attrs.resizable = false; // TODO: requires recreating framebuffer
         let window_size = PhysicalSize {
             width: args.width,
-            height: args.width,
+            height: args.height,
         };
         window_attrs.inner_size = Some(window_size.into());
 
@@ -93,7 +119,7 @@ impl ApplicationHandler for App {
             let monitor_size = primary_monitor.size();
             let position = winit::dpi::PhysicalPosition {
                 x: (monitor_size.width.saturating_sub(window_size.width)) / 2,
-                y: (monitor_size.height.saturating_sub(window_size.width)) / 2,
+                y: (monitor_size.height.saturating_sub(window_size.height)) / 2,
             };
             window.set_outer_position(position);
         } else {
@@ -129,7 +155,7 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                 }
                 _ if !repeat && key_state == ElementState::Pressed => {
-                    self.window.request_redraw();
+                    self.window.as_ref().unwrap().request_redraw();
                 }
                 _ => {}
             },
@@ -153,7 +179,7 @@ impl ApplicationHandler for App {
 }
 
 struct AppState {
-    window: Arc<Window>,
+    window: Option<Arc<Window>>,
     rendering_engine: RenderingEngine,
 }
 
@@ -163,7 +189,16 @@ impl AppState {
         let surface_source = rendering_engine::SurfaceSource::Window(window.clone());
         let rendering_engine = RenderingEngine::new(surface_source, default(), default()).await;
         Self {
-            window,
+            window: Some(window),
+            rendering_engine,
+        }
+    }
+    
+    async fn new_headless(args: AppArgs) -> Self {
+        let surface_source = rendering_engine::SurfaceSource::Standalone(args.width, args.width);
+        let rendering_engine = RenderingEngine::new(surface_source, default(), default()).await;
+        Self {
+            window: None,
             rendering_engine,
         }
     }
@@ -268,11 +303,13 @@ impl AppState {
         pass.draw(0 .. 3, 0 .. 1);
         drop(pass);
         
+        self.rendering_engine.surface_dest.queue_readback(&mut encoder);
+        
         let commands = encoder.finish();
         let submission = self.rendering_engine.queue.submit([commands]);
         self.rendering_engine.surface_dest.pre_present();
         surface_handle.present();
         
-        self.rendering_engine.device.poll(PollType::WaitForSubmissionIndex(submission)).unwrap();
+        self.rendering_engine.device.poll(PollType::WaitForSubmissionIndex(submission)).expect("couldn't poll device");
     }
 }

@@ -2,6 +2,8 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use crate::util::*;
 
+// use crevice
+
 use wgpu::{
     util::{BufferInitDescriptor, DeviceExt}, BufferUsages, PollType, ShaderStages, TextureUsages
 };
@@ -45,7 +47,7 @@ impl SurfaceDest {
             },
             &Self::Standalone { format, ref texture, .. } => {
                 let view = texture.create_view(&wgpu::TextureViewDescriptor {
-                    format: Some(format.add_srgb_suffix()),
+                    format: Some(format),
                     ..default()
                 });
                 SurfaceHandle::Standalone(view)
@@ -53,17 +55,36 @@ impl SurfaceDest {
         }
     }
     
+    pub fn queue_readback(&self, encoder: &mut wgpu::CommandEncoder) {
+        match self {
+            Self::Window { .. } => {},
+            Self::Standalone { texture, readback_buffer, .. } => {
+                let size = texture.size();
+                encoder.copy_texture_to_buffer(
+                    wgpu::TexelCopyTextureInfo {
+                        texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyBufferInfo {
+                        buffer: readback_buffer,
+                        layout: wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some((size.width * 4) as u32),
+                            rows_per_image: Some(size.height as u32),
+                        },
+                    },
+                    size,
+                );
+            },
+        }
+    }
+    
     pub fn pre_present(&self) {
         match self {
             Self::Window { window, .. } => window.pre_present_notify(),
             Self::Standalone { .. } => {},
-        }
-    }
-    
-    pub fn readback(&self) -> Vec<u8> {
-        match self {
-            Self::Window { .. } => unreachable!("trying to readback from window surface"),
-            Self::Standalone { .. } => todo!("standalone readback"),
         }
     }
 }
@@ -201,6 +222,27 @@ impl RenderingEngine {
             render_data: Rc::new(RefCell::new(init_render_data)),
             render_settings: init_render_settings,
             pipelines,
+        }
+    }
+    
+    pub async fn readback_pixels(&self) -> Vec<u8> {
+        match &self.surface_dest {
+            SurfaceDest::Window { .. } => unreachable!("trying to readback from window surface"),
+            &SurfaceDest::Standalone { ref texture, ref readback_buffer, size: (width, height), .. } => {
+                let slice = readback_buffer.slice(..);
+                let (sender, receiver) = flume::bounded(1);
+                slice.map_async(wgpu::MapMode::Read, move |res| sender.send(res).unwrap());
+                self.device.poll(wgpu::PollType::Wait).unwrap();
+                receiver.recv_async().await.unwrap().unwrap();
+                
+                let view = slice.get_mapped_range();
+                let mut pixels = Vec::with_capacity(width as usize * height as usize * size_of::<u32>());
+                pixels.extend_from_slice(&view);
+                drop(view);
+                readback_buffer.unmap();
+                
+                pixels
+            },
         }
     }
 }
