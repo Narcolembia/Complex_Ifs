@@ -1,11 +1,15 @@
 [package]
-name = "Complex_Ifs"
+name = "complex_ifs"
 version = "0.1.0"
 edition = "2024"
+
+default-run = "complex_ifs"
 
 [dependencies]
 anyhow = { version = "1.0.98", features = ["backtrace"] }
 clap = { version = "4.5.40", features = ["derive"] }
+crevice = "0.18.0"
+image = "0.25.6"
 pollster = "0.4.0"
 rand = "0.9.1"
 wgpu = "25.0.2"

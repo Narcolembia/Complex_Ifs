@@ -1,13 +1,31 @@
+
+struct TransformData{
+    scale: f32,
+    rotation: f32,
+    translation_x: f32,
+    translation_y: f32, 
+}
+
+
+struct RenderedData{
+    histogram: Vec<u32>,
+    max: u32,
+}
+
+struct Metadata{
+    width: u32,
+    height:u32,
+    iterations_per_invocation:u32,
+}
+
 @group(0) @binding(0)
 var<storage, read_write> output: array<atomic<u32>>;
 
 @group(0) @binding(1)
 var<storage, read> entropy: array<u32>;
 
-
-struct Metadata {
-	max: atomic<u32>,
-}
+@group(0) @binding(1)
+var<storage, read> metadata: Metadata;
 
 @group(1) @binding(0)
 var<storage, read_write> metadata: Metadata;
